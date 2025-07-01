@@ -13,6 +13,7 @@ import asyncio
 import json
 import subprocess
 import random
+import sys
 from pathlib import Path
 from datetime import datetime
 from typing import List, Dict, Optional
@@ -57,12 +58,15 @@ def run_git_command(cmd: List[str], cwd: str) -> Optional[str]:
 
 def get_commits_since(repo_path: str, since: datetime) -> List[Dict[str, any]]:
     """Get all commits from all branches since a given date with statistics"""
-    # Format date for git
+    # Format dates for git (analyze full day from midnight to midnight)
     since_str = since.strftime("%Y-%m-%d %H:%M:%S")
+    until = since.replace(hour=23, minute=59, second=59)
+    until_str = until.strftime("%Y-%m-%d %H:%M:%S")
     
     # Get commits with file statistics in a single command
     cmd = [
-        'git', 'log', '--all', '--no-merges', f'--since={since_str}',
+        'git', 'log', '--all', '--no-merges', 
+        f'--since={since_str}', f'--until={until_str}',
         '--format=COMMIT_BOUNDARY|||%H|||%an|||%ae|||%at|||%s',
         '--numstat'
     ]
@@ -232,6 +236,31 @@ def print_project_summary(project_result: Dict):
             print(f"     - {work['hours']}h: {work['summary']}")
 
 
+def parse_date_argument() -> Optional[datetime]:
+    """Parse date from command line arguments"""
+    if len(sys.argv) > 1:
+        date_str = sys.argv[1]
+        try:
+            # Try to parse the date in various formats
+            for fmt in ['%Y-%m-%d', '%Y/%m/%d', '%d-%m-%Y', '%d/%m/%Y']:
+                try:
+                    return datetime.strptime(date_str, fmt).replace(hour=0, minute=0, second=0, microsecond=0)
+                except ValueError:
+                    continue
+            
+            # If no format worked, raise an error
+            raise ValueError(f"Could not parse date '{date_str}'. Please use format YYYY-MM-DD")
+        except ValueError as e:
+            print(f"Error: {e}")
+            print("Usage: uv run timekeep.py [date]")
+            print("Examples:")
+            print("  uv run timekeep.py                # Analyze today's commits")
+            print("  uv run timekeep.py 2025-01-01     # Analyze commits from specific date")
+            sys.exit(1)
+    
+    return None
+
+
 async def main():
     """Main execution function"""
     print(f"Timekeep - Running at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -242,16 +271,19 @@ async def main():
         projects = load_project_config()
         print(f"Loaded {len(projects)} projects from configuration")
         
-        # Set time range (today)
-        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        # Get the date to analyze (from argument or default to today)
+        target_date = parse_date_argument()
+        if target_date is None:
+            # Default to today
+            target_date = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         
-        print(f"\nAnalyzing commits since: {today.strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"\nAnalyzing commits from: {target_date.strftime('%Y-%m-%d')}")
         print("-" * 50)
         
         # Analyze each project
         tasks = []
         for project in projects:
-            task = analyze_project(project, today)
+            task = analyze_project(project, target_date)
             tasks.append(task)
         
         # Wait for all analyses to complete

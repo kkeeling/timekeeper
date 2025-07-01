@@ -36,8 +36,19 @@ A single-file time tracking tool that analyzes git commits across multiple proje
 
 Run the script directly with `uv`:
 ```bash
+# Analyze today's commits
 uv run timekeep.py
+
+# Analyze commits from a specific date
+uv run timekeep.py 2025-01-01
+uv run timekeep.py 2025-06-30
 ```
+
+The script accepts dates in multiple formats:
+- `YYYY-MM-DD` (recommended)
+- `YYYY/MM/DD`
+- `DD-MM-YYYY`
+- `DD/MM/YYYY`
 
 ### Output Example
 ```
@@ -75,8 +86,11 @@ Total time across all projects: 11.75 hours
 # Edit crontab
 crontab -e
 
-# Add this line for 10pm daily execution
+# Add this line for 10pm daily execution (analyzes current day)
 0 22 * * * cd /path/to/timekeeper && uv run timekeep.py >> ~/logs/timekeeper.log 2>&1
+
+# Or to analyze the previous day's commits (useful for end-of-day reporting)
+0 22 * * * cd /path/to/timekeeper && uv run timekeep.py $(date -d "yesterday" +\%Y-\%m-\%d) >> ~/logs/timekeeper.log 2>&1
 ```
 
 #### Windows (using Task Scheduler):
