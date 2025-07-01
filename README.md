@@ -12,6 +12,7 @@ A single-file time tracking tool that analyzes git commits across multiple proje
 - **Structured outputs** using Pydantic models for reliable JSON responses
 - De-duplicates commits across branches
 - Generates daily summaries with time estimates and major task breakdowns
+- **TimeCamp integration** (optional) - automatically creates time entries from analyzed commits
 
 ## Setup
 
@@ -33,7 +34,9 @@ A single-file time tracking tool that analyzes git commits across multiple proje
    [
      {
        "name": "My Project",
-       "path": "~/dev/my-project"
+       "path": "~/dev/my-project",
+       "timecamp_task_id": 123456,
+       "timecamp_enabled": true
      },
      {
        "name": "Another Project", 
@@ -41,6 +44,40 @@ A single-file time tracking tool that analyzes git commits across multiple proje
      }
    ]
    ```
+
+### TimeCamp Integration (Optional)
+
+To enable automatic time tracking with TimeCamp:
+
+1. Get your TimeCamp API token:
+   - Log in to TimeCamp: https://app.timecamp.com
+   - Go to Settings → Your Profile: https://app.timecamp.com/app#/settings/users/me
+   - Copy your API token
+
+2. Add the token to your `.env` file:
+   ```bash
+   TIMECAMP_API_TOKEN=your-actual-timecamp-token-here
+   ```
+
+3. Find your TimeCamp task IDs:
+   - Use the TimeCamp web interface to find task IDs
+   - Or run this curl command with your token:
+     ```bash
+     curl -H "Authorization: YOUR_TOKEN" https://www.timecamp.com/third_party/api/tasks
+     ```
+
+4. Update `projects.json` with TimeCamp task IDs:
+   ```json
+   {
+     "name": "Project Name",
+     "path": "~/dev/project",
+     "timecamp_task_id": 123456,
+     "timecamp_enabled": true
+   }
+   ```
+
+   - `timecamp_task_id`: The ID of the task in TimeCamp
+   - `timecamp_enabled`: Set to `false` to disable for specific projects
 
 ## Usage
 
@@ -52,6 +89,10 @@ uv run timekeep.py
 # Analyze commits from a specific date
 uv run timekeep.py 2025-01-01
 uv run timekeep.py 2025-06-30
+
+# Disable TimeCamp integration for this run
+uv run timekeep.py --no-timecamp
+uv run timekeep.py 2025-01-01 --no-timecamp
 ```
 
 The script accepts dates in multiple formats:
@@ -77,6 +118,7 @@ My Project:
      - Refactored database schema for better performance (3.0h)
      - Implemented user authentication flow with JWT (2.5h)
      - Fixed critical bug in payment module (1.0h)
+  ✅ Submitted to TimeCamp: 7.50h
 
 Another Project:
   📊 Commits: 3
@@ -140,7 +182,8 @@ The script includes inline metadata for `uv`:
 #     "google-genai>=0.2.0",
 #     "google-api-core>=2.0.0",
 #     "python-dotenv>=1.0.0",
-#     "pydantic>=2.0.0"
+#     "pydantic>=2.0.0",
+#     "requests>=2.31.0"
 # ]
 # ///
 ```
@@ -150,8 +193,8 @@ The script includes inline metadata for `uv`:
 - [x] Google Gemini AI integration for intelligent time estimation
 - [x] Batch processing for cost efficiency
 - [x] Structured outputs with Pydantic
+- [x] TimeCamp API integration for automatic time entry
 - [ ] Caching to avoid re-analyzing same commits
-- [ ] TimeCamp API integration for automatic time entry
 - [ ] Configurable time ranges (week, month, custom)
 - [ ] Export to CSV/JSON formats
 - [ ] Click CLI interface for better command-line options

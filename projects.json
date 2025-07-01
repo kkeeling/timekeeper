@@ -1,7 +1,9 @@
 [
   {
     "name": "Timekeeper",
-    "path": "~/Documents/_projects/timekeeper"
+    "path": "~/Documents/_projects/timekeeper",
+    "timecamp_task_id": null,
+    "timecamp_enabled": true
   },
   {
     "name": "Meridian/Penzai",
@@ -17,6 +19,8 @@
   },
   {
     "name": "Bestball Draft Analyzer",
-    "path": "~/Documents/_projects/bestball-draft-analyzer"
+    "path": "~/Documents/_projects/bestball-draft-analyzer",
+    "timecamp_task_id": 174721345,
+    "timecamp_enabled": true
   }
 ]

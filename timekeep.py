@@ -5,7 +5,8 @@
 #     "google-genai>=0.2.0",
 #     "google-api-core>=2.0.0",
 #     "python-dotenv>=1.0.0",
-#     "pydantic>=2.0.0"
+#     "pydantic>=2.0.0",
+#     "requests>=2.31.0"
 # ]
 # ///
 """
@@ -14,18 +15,20 @@ Uses git analysis and AI to estimate development time
 """
 
 import asyncio
+import argparse
 import json
 import os
 import subprocess
 import sys
 from pathlib import Path
 from datetime import datetime
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 from dotenv import load_dotenv
 from pydantic import BaseModel, ValidationError
 from google import genai
 from google.genai import types
 from google.api_core import exceptions as google_exceptions
+import requests
 
 
 # Constants for fallback estimation
@@ -45,7 +48,85 @@ class CommitAnalysis(BaseModel):
     major_tasks: List[TaskSummary]
 
 
-def load_project_config(config_path: Path = None) -> List[Dict[str, str]]:
+class TimeCampClient:
+    """Client for interacting with TimeCamp API"""
+    
+    def __init__(self, api_token: str):
+        self.api_token = api_token
+        self.base_url = 'https://www.timecamp.com/third_party/api'
+        self.headers = {
+            'Authorization': api_token,
+            'Content-Type': 'application/json'
+        }
+    
+    def create_time_entry(self, task_id: int, duration: float, date_str: str, 
+                         note: str = '') -> Dict[str, any]:
+        """
+        Create a time entry in TimeCamp
+        
+        Args:
+            task_id: The ID of the task in TimeCamp
+            duration: Duration in hours (will be converted to seconds)
+            date_str: Date in format 'YYYY-MM-DD'
+            note: Description for the time entry
+        
+        Returns:
+            Response data or error information
+        """
+        url = f'{self.base_url}/entries'
+        
+        # Convert hours to seconds, rounding to nearest second
+        duration_seconds = round(duration * 3600)
+        
+        payload = {
+            'date': date_str,
+            'duration': duration_seconds,
+            'note': note,
+            'task_id': task_id
+        }
+        
+        try:
+            response = requests.post(url, headers=self.headers, json=payload, timeout=10)
+            
+            if response.status_code == 429:
+                return {
+                    'success': False,
+                    'error': 'API rate limit reached. Please try again later.'
+                }
+            
+            response.raise_for_status()
+            
+            return {
+                'success': True,
+                'data': response.json()
+            }
+            
+        except requests.exceptions.Timeout:
+            return {
+                'success': False,
+                'error': 'Request timed out'
+            }
+        except requests.exceptions.RequestException as e:
+            return {
+                'success': False,
+                'error': str(e),
+                'status_code': e.response.status_code if e.response is not None else None
+            }
+    
+    def get_tasks(self) -> Optional[Dict[str, any]]:
+        """Get all tasks from TimeCamp to find task IDs"""
+        url = f'{self.base_url}/tasks'
+        
+        try:
+            response = requests.get(url, headers=self.headers, timeout=10)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            print(f"Error fetching TimeCamp tasks: {e}")
+            return None
+
+
+def load_project_config(config_path: Path = None) -> List[Dict[str, Any]]:
     """Load project configuration from JSON file"""
     if config_path is None:
         config_path = Path(__file__).parent / "projects.json"
@@ -329,33 +410,77 @@ def print_project_summary(project_result: Dict):
             print(f"     - {task['task']} ({task.get('hours', 0)}h)")
 
 
-def parse_date_argument() -> Optional[datetime]:
-    """Parse date from command line arguments"""
-    if len(sys.argv) > 1:
-        date_str = sys.argv[1]
-        try:
-            # Try to parse the date in various formats
-            for fmt in ['%Y-%m-%d', '%Y/%m/%d', '%d-%m-%Y', '%d/%m/%Y']:
-                try:
-                    return datetime.strptime(date_str, fmt).replace(hour=0, minute=0, second=0, microsecond=0)
-                except ValueError:
-                    continue
-            
-            # If no format worked, raise an error
-            raise ValueError(f"Could not parse date '{date_str}'. Please use format YYYY-MM-DD")
-        except ValueError as e:
-            print(f"Error: {e}")
-            print("Usage: uv run timekeep.py [date]")
-            print("Examples:")
-            print("  uv run timekeep.py                # Analyze today's commits")
-            print("  uv run timekeep.py 2025-01-01     # Analyze commits from specific date")
-            sys.exit(1)
+def submit_to_timecamp(client: TimeCampClient, project: Dict, result: Dict, 
+                      date_str: str) -> bool:
+    """Submit time entry to TimeCamp if configured"""
+    # Check if TimeCamp is enabled for this project (defaults to False for opt-in)
+    if not project.get('timecamp_enabled', False):
+        return False
     
-    return None
+    # Check if project has TimeCamp task ID
+    task_id = project.get('timecamp_task_id')
+    if not task_id:
+        return False
+    
+    # Skip if no time to report
+    if result.get('error') or result.get('total_hours', 0) == 0:
+        return False
+    
+    # Create note from summary and major tasks
+    note_parts = [f"Timekeep: {result.get('summary', 'Development work')}"]
+    major_tasks = result.get('major_tasks', [])[:3]  # Top 3 tasks
+    if major_tasks:
+        note_parts.append("\nTasks:")
+        for task in major_tasks:
+            note_parts.append(f"- {task['task']} ({task.get('hours', 0)}h)")
+    
+    note = '\n'.join(note_parts)
+    
+    # Submit time entry
+    response = client.create_time_entry(
+        task_id=task_id,
+        duration=result['total_hours'],
+        date_str=date_str,
+        note=note
+    )
+    
+    if response['success']:
+        print(f"  ✅ Submitted to TimeCamp: {result['total_hours']}h")
+        return True
+    else:
+        print(f"  ⚠️  TimeCamp submission failed: {response['error']}")
+        return False
+
+
+def parse_arguments():
+    """Parse command-line arguments"""
+    parser = argparse.ArgumentParser(
+        description="A single-file time tracking tool that analyzes git commits across multiple projects",
+        epilog="Examples:\n"
+               "  uv run timekeep.py                    # Analyze today's commits\n"
+               "  uv run timekeep.py 2025-01-01         # Analyze commits from specific date\n"
+               "  uv run timekeep.py --no-timecamp      # Disable TimeCamp integration",
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument(
+        'date',
+        nargs='?',
+        default=None,
+        help='Optional date to analyze commits from (YYYY-MM-DD, YYYY/MM/DD, DD-MM-YYYY, DD/MM/YYYY)'
+    )
+    parser.add_argument(
+        '--no-timecamp',
+        action='store_true',
+        help='Disable TimeCamp integration for this run'
+    )
+    return parser.parse_args()
 
 
 async def main():
     """Main execution function"""
+    # Parse command-line arguments
+    args = parse_arguments()
+    
     # Load environment variables
     load_dotenv()
     
@@ -368,6 +493,18 @@ async def main():
         print("\nGet your API key from: https://makersuite.google.com/app/apikey")
         sys.exit(1)
     
+    # Check for TimeCamp token (optional)
+    timecamp_token = os.getenv('TIMECAMP_API_TOKEN')
+    timecamp_client = None
+    
+    if args.no_timecamp:
+        print("TimeCamp integration disabled (--no-timecamp flag)")
+    elif timecamp_token:
+        timecamp_client = TimeCampClient(timecamp_token)
+        print("TimeCamp integration enabled")
+    else:
+        print("TimeCamp integration disabled (no TIMECAMP_API_TOKEN found)")
+    
     print(f"Timekeep - Running at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 50)
     
@@ -377,8 +514,20 @@ async def main():
         print(f"Loaded {len(projects)} projects from configuration")
         
         # Get the date to analyze (from argument or default to today)
-        target_date = parse_date_argument()
-        if target_date is None:
+        target_date = None
+        if args.date:
+            # Try to parse the date in various formats
+            for fmt in ['%Y-%m-%d', '%Y/%m/%d', '%d-%m-%Y', '%d/%m/%Y']:
+                try:
+                    target_date = datetime.strptime(args.date, fmt).replace(hour=0, minute=0, second=0, microsecond=0)
+                    break
+                except ValueError:
+                    continue
+            
+            if target_date is None:
+                print(f"Error: Could not parse date '{args.date}'. Please use format YYYY-MM-DD")
+                sys.exit(1)
+        else:
             # Default to today
             target_date = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         
@@ -394,12 +543,18 @@ async def main():
         # Wait for all analyses to complete
         results = await asyncio.gather(*tasks)
         
-        # Print summaries
+        # Print summaries and submit to TimeCamp
         total_hours_all = 0
-        for result in results:
+        date_str = target_date.strftime('%Y-%m-%d')
+        
+        for i, result in enumerate(results):
             print_project_summary(result)
             if not result.get('error'):
                 total_hours_all += result['total_hours']
+                
+                # Submit to TimeCamp if client is available
+                if timecamp_client:
+                    submit_to_timecamp(timecamp_client, projects[i], result, date_str)
         
         print("\n" + "=" * 50)
         print(f"Total time across all projects: {total_hours_all:.2f} hours")
