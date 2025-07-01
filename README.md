@@ -1,96 +1,150 @@
 # Timekeep
 
-Automated time tracking for development projects using git commit analysis and Claude Code SDK.
+A single-file time tracking tool that analyzes git commits across multiple projects to estimate development time. Uses AI-powered analysis (currently stubbed) to provide intelligent time estimates and work summaries.
 
-## Overview
+## Features
 
-Timekeep is a workflow agent that:
-- Fetches active projects from your Notion workspace
-- Analyzes git logs to identify work done each day
-- Estimates development time based on commit complexity
-- Generates time tracking summaries
-
-## Prerequisites
-
-- Python 3.10 or higher
-- Node.js (for Claude Code CLI)
-- Claude Code CLI installed globally
-- Access to Notion API via MCP configuration
+- Single-file script using `uv`'s inline dependency management
+- Analyzes git commits from ALL branches (not just main/current)
+- Local JSON configuration for project paths
+- Async LLM stub for future AI-powered time estimation
+- De-duplicates commits across branches
+- Generates daily summaries with time estimates
 
 ## Setup
 
-1. **Install Claude Code CLI** (if not already installed):
+1. Install `uv` (if not already installed):
    ```bash
-   npm install -g @anthropic-ai/claude-code
+   curl -LsSf https://astral.sh/uv/install.sh | sh
    ```
 
-2. **Install Python dependencies**:
-   ```bash
-   pip install -r requirements.txt
+2. Create a `projects.json` file in the same directory as `timekeep.py`:
+   ```json
+   [
+     {
+       "name": "My Project",
+       "path": "~/dev/my-project"
+     },
+     {
+       "name": "Another Project", 
+       "path": "~/work/another-project"
+     }
+   ]
    ```
-
-3. **Configure environment** (optional):
-   - Edit `.env` file if you need custom configuration
-   - Currently uses Claude Code's default authentication
 
 ## Usage
 
-Run the script manually:
+Run the script directly with `uv`:
 ```bash
-python timekeeper.py
+uv run timekeep.py
 ```
 
-Expected output:
+### Output Example
 ```
 Timekeep - Running at 2025-01-01 10:00:00
 ==================================================
-Fetching active projects from Notion...
+Loaded 2 projects from configuration
 
-Active Projects Found:
-----------------------------------------
-- Timekeep (ID: 22362bfc-39b2-81f1-9427-d13cdc631cec)
-- [Other active projects]
+Analyzing commits since: 2025-01-01 00:00:00
+--------------------------------------------------
 
-Total active projects: X
+My Project:
+  📊 Commits: 5
+  ⏱️  Time: 7.50 hours
+  📝 Work summary:
+     - 3.0h: Refactored database schema for better performance
+     - 2.5h: Implemented user authentication flow
+     - 1.0h: Fixed critical bug in payment module
+
+Another Project:
+  📊 Commits: 3
+  ⏱️  Time: 4.25 hours
+  📝 Work summary:
+     - 2.0h: Integrated third-party email service
+     - 1.5h: Created new API endpoints
+     - 0.75h: Optimized frontend bundle size
+
+==================================================
+Total time across all projects: 11.75 hours
 ```
 
-## Current Features
+### Setting up nightly runs
 
-✅ Connects to Claude Code SDK
-✅ Fetches active projects from Notion
-✅ Displays project list with IDs
+#### macOS/Linux (using cron):
+```bash
+# Edit crontab
+crontab -e
 
-## Planned Features
+# Add this line for 10pm daily execution
+0 22 * * * cd /path/to/timekeeper && uv run timekeep.py >> ~/logs/timekeeper.log 2>&1
+```
 
-- [ ] Git log analysis for each project
-- [ ] Time estimation based on commit complexity
-- [ ] Summary report generation
-- [ ] Automatic nightly execution at 10pm
-- [ ] TimeCamp integration for time tracking
+#### Windows (using Task Scheduler):
+1. Open Task Scheduler
+2. Create Basic Task
+3. Set trigger to Daily at 10:00 PM
+4. Set action to start `uv.exe` with arguments `run timekeep.py`
 
-## Project Structure
+## How it Works
 
+1. **Script Dependencies**: Uses `uv`'s inline script metadata for dependency management
+2. **Project Configuration**: Reads local `projects.json` for repository paths
+3. **Git Analysis**: Scans ALL branches for commits since midnight
+4. **Commit De-duplication**: Removes duplicate commits across branches
+5. **Time Estimation**: Currently uses stub that returns mock data
+   - Future: Will send commit details to Claude for intelligent analysis
+6. **Summary Generation**: Shows top work items by time spent
+
+## Architecture
+
+The entire tool is a single file:
 ```
 timekeeper/
-├── timekeeper.py      # Main script
-├── requirements.txt   # Python dependencies
-├── .env              # Environment variables (gitignored)
-├── .gitignore        # Git ignore file
-└── README.md         # This file
+├── timekeep.py         # Single-file script with inline dependencies
+└── projects.json       # Project configuration
 ```
 
-## Troubleshooting
+The script includes inline metadata for `uv`:
+```python
+# /// script
+# requires-python = ">=3.12"
+# dependencies = [
+#     "python-dotenv>=1.0.0",
+# ]
+# ///
+```
 
-If you encounter errors:
+## Future Enhancements
 
-1. **"Claude Code CLI not found"**: Ensure Claude Code is installed globally
-2. **"No projects found"**: Check that your Notion integration has access to the Projects database
-3. **Authentication errors**: Make sure Claude Code CLI is properly authenticated
+- [ ] Real LLM integration for intelligent time estimation
+- [ ] Caching to avoid re-analyzing same commits
+- [ ] TimeCamp API integration for automatic time entry
+- [ ] Configurable time ranges (week, month, custom)
+- [ ] Export to CSV/JSON formats
+- [ ] Click CLI interface for better command-line options
+- [ ] Slack/Discord notifications
 
 ## Development
 
-This project uses a simple architecture:
-- Python for the main logic
-- Claude Code SDK for AI-powered analysis
-- Notion API (via MCP) for project management
-- Git commands for repository analysis (coming soon)
+The LLM stub (`estimate_time_with_llm`) currently returns random mock data. To integrate real AI analysis:
+
+1. Replace the stub with actual Claude Code SDK calls
+2. Send commit details (message, files changed, diff stats)
+3. Parse AI response for time estimate and work summary
+
+### Adding Dependencies
+
+To add new dependencies, update the inline script metadata:
+```python
+# /// script
+# requires-python = ">=3.12"
+# dependencies = [
+#     "python-dotenv>=1.0.0",
+#     "click>=8.0.0",  # New dependency
+# ]
+# ///
+```
+
+## Contributing
+
+Feel free to submit issues or pull requests to improve Timekeep!

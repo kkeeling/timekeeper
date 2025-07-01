@@ -1,21 +1,21 @@
 #!/usr/bin/env python3
+# /// script
+# requires-python = ">=3.12"
+# dependencies = [
+# ]
+# ///
 """
 Timekeep - Automated time tracking for development projects
 Uses git analysis and AI to estimate development time
 """
 
 import asyncio
-import anyio
 import json
 import subprocess
 import random
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import List, Dict, Optional
-from dotenv import load_dotenv
-
-# Load environment variables
-load_dotenv()
 
 
 def load_project_config(config_path: Path = None) -> List[Dict[str, str]]:
@@ -36,11 +36,11 @@ def load_project_config(config_path: Path = None) -> List[Dict[str, str]]:
     return projects
 
 
-def run_git_command(cmd: str, cwd: str) -> Optional[str]:
-    """Execute a git command and return output"""
+def run_git_command(cmd: List[str], cwd: str) -> Optional[str]:
+    """Execute a git command using list format and return output"""
     try:
         result = subprocess.run(
-            cmd.split(),
+            cmd,
             cwd=cwd,
             capture_output=True,
             text=True,
@@ -55,13 +55,17 @@ def run_git_command(cmd: str, cwd: str) -> Optional[str]:
         return None
 
 
-def get_commits_since(repo_path: str, since: datetime) -> List[Dict[str, str]]:
-    """Get all commits from all branches since a given date"""
+def get_commits_since(repo_path: str, since: datetime) -> List[Dict[str, any]]:
+    """Get all commits from all branches since a given date with statistics"""
     # Format date for git
     since_str = since.strftime("%Y-%m-%d %H:%M:%S")
     
-    # Get all commits from all branches, excluding merges
-    cmd = f'git log --all --no-merges --since="{since_str}" --format=%H|||%an|||%ae|||%at|||%s'
+    # Get commits with file statistics in a single command
+    cmd = [
+        'git', 'log', '--all', '--no-merges', f'--since={since_str}',
+        '--format=COMMIT_BOUNDARY|||%H|||%an|||%ae|||%at|||%s',
+        '--numstat'
+    ]
     output = run_git_command(cmd, repo_path)
     
     if not output:
@@ -69,67 +73,48 @@ def get_commits_since(repo_path: str, since: datetime) -> List[Dict[str, str]]:
     
     commits = []
     seen_hashes = set()
+    current_commit = None
     
     for line in output.splitlines():
-        if not line:
-            continue
+        if line.startswith('COMMIT_BOUNDARY|||'):
+            # Save previous commit if exists
+            if current_commit and current_commit['hash'] not in seen_hashes:
+                seen_hashes.add(current_commit['hash'])
+                commits.append(current_commit)
             
-        parts = line.split('|||')
-        if len(parts) != 5:
-            continue
-            
-        commit_hash = parts[0]
-        
-        # Skip duplicate commits (same commit on multiple branches)
-        if commit_hash in seen_hashes:
-            continue
-        seen_hashes.add(commit_hash)
-        
-        commits.append({
-            'hash': commit_hash,
-            'author': parts[1],
-            'email': parts[2],
-            'timestamp': int(parts[3]),
-            'message': parts[4]
-        })
+            # Parse new commit
+            parts = line[18:].split('|||')  # Skip 'COMMIT_BOUNDARY|||'
+            if len(parts) == 5:
+                current_commit = {
+                    'hash': parts[0],
+                    'author': parts[1],
+                    'email': parts[2],
+                    'timestamp': int(parts[3]),
+                    'message': parts[4],
+                    'files': 0,
+                    'additions': 0,
+                    'deletions': 0
+                }
+        elif current_commit and '\t' in line:
+            # Parse numstat line
+            parts = line.split('\t')
+            if len(parts) >= 3:
+                current_commit['files'] += 1
+                try:
+                    # Handle binary files which show '-'
+                    add = int(parts[0]) if parts[0] != '-' else 0
+                    delete = int(parts[1]) if parts[1] != '-' else 0
+                    current_commit['additions'] += add
+                    current_commit['deletions'] += delete
+                except ValueError:
+                    continue
+    
+    # Don't forget the last commit
+    if current_commit and current_commit['hash'] not in seen_hashes:
+        commits.append(current_commit)
     
     return commits
 
-
-def get_commit_stats(repo_path: str, commit_hash: str) -> Dict[str, int]:
-    """Get statistics for a specific commit"""
-    # Get the number of files changed and lines added/deleted
-    cmd = f"git show --numstat --format= {commit_hash}"
-    output = run_git_command(cmd, repo_path)
-    
-    if not output:
-        return {'files': 0, 'additions': 0, 'deletions': 0}
-    
-    files = 0
-    additions = 0
-    deletions = 0
-    
-    for line in output.splitlines():
-        if not line or line.startswith('\\'):
-            continue
-            
-        parts = line.split('\t')
-        if len(parts) >= 3:
-            files += 1
-            try:
-                # Handle binary files which show '-'
-                add = int(parts[0]) if parts[0] != '-' else 0
-                delete = int(parts[1]) if parts[1] != '-' else 0
-                additions += add
-                deletions += delete
-            except ValueError:
-                continue
-    
-    return {
-        'files': files,
-        'additions': additions,
-        'deletions': deletions
-    }
 
 
 async def estimate_time_with_llm(commit_info: Dict) -> Dict[str, any]:
@@ -201,10 +186,7 @@ async def analyze_project(project: Dict[str, str], since: datetime) -> Dict:
     # Analyze each commit with the LLM stub
     tasks = []
     for commit in commits:
-        # Add commit stats
-        stats = get_commit_stats(project_path, commit['hash'])
-        commit.update(stats)
-        
+        # Stats are already included in commit from get_commits_since
         # Create async task for LLM analysis
         task = estimate_time_with_llm(commit)
         tasks.append(task)
@@ -294,10 +276,5 @@ async def main():
         traceback.print_exc()
 
 
-def run():
-    """Entry point for the timekeeper command"""
-    anyio.run(main)
-
-
 if __name__ == "__main__":
-    run()
+    asyncio.run(main())
