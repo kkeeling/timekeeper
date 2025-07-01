@@ -196,13 +196,20 @@ Consider:
         
         # Parse and validate the structured response with Pydantic
         analysis_result = CommitAnalysis.model_validate_json(response.text)
-        return analysis_result.model_dump()  # Return as dict for consistency
+        result_dict = analysis_result.model_dump()
+        
+        # Divide all time estimates by 4
+        result_dict['total_hours'] = round(result_dict['total_hours'] / 4, 2)
+        for task in result_dict.get('major_tasks', []):
+            task['hours'] = round(task['hours'] / 4, 2)
+        
+        return result_dict
         
     except json.JSONDecodeError as e:
         # Handle JSON parsing errors
         print(f"JSON parsing error from Gemini API: {e}")
         total_lines = sum(c['additions'] + c['deletions'] for c in commits)
-        hours = round(min(FALLBACK_BASE_HOURS + total_lines / FALLBACK_LINES_PER_HOUR, FALLBACK_MAX_HOURS), 2)
+        hours = round(min(FALLBACK_BASE_HOURS + total_lines / FALLBACK_LINES_PER_HOUR, FALLBACK_MAX_HOURS) / 4, 2)
         
         return {
             'total_hours': hours,
@@ -214,7 +221,7 @@ Consider:
         # Handle Pydantic validation errors
         print(f"Response validation error from Gemini API: {e}")
         total_lines = sum(c['additions'] + c['deletions'] for c in commits)
-        hours = round(min(FALLBACK_BASE_HOURS + total_lines / FALLBACK_LINES_PER_HOUR, FALLBACK_MAX_HOURS), 2)
+        hours = round(min(FALLBACK_BASE_HOURS + total_lines / FALLBACK_LINES_PER_HOUR, FALLBACK_MAX_HOURS) / 4, 2)
         
         return {
             'total_hours': hours,
@@ -226,7 +233,7 @@ Consider:
         # Handle specific Google API errors
         print(f"Gemini API Error: {type(e).__name__}: {e}")
         total_lines = sum(c['additions'] + c['deletions'] for c in commits)
-        hours = round(min(FALLBACK_BASE_HOURS + total_lines / FALLBACK_LINES_PER_HOUR, FALLBACK_MAX_HOURS), 2)
+        hours = round(min(FALLBACK_BASE_HOURS + total_lines / FALLBACK_LINES_PER_HOUR, FALLBACK_MAX_HOURS) / 4, 2)
         
         return {
             'total_hours': hours,
@@ -238,7 +245,7 @@ Consider:
         # Catch any other unexpected exceptions
         print(f"An unexpected error occurred: {type(e).__name__}: {e}")
         total_lines = sum(c['additions'] + c['deletions'] for c in commits)
-        hours = round(min(FALLBACK_BASE_HOURS + total_lines / FALLBACK_LINES_PER_HOUR, FALLBACK_MAX_HOURS), 2)
+        hours = round(min(FALLBACK_BASE_HOURS + total_lines / FALLBACK_LINES_PER_HOUR, FALLBACK_MAX_HOURS) / 4, 2)
         
         return {
             'total_hours': hours,
