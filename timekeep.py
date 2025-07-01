@@ -2,6 +2,10 @@
 # /// script
 # requires-python = ">=3.12"
 # dependencies = [
+#     "google-genai>=0.2.0",
+#     "google-api-core>=2.0.0",
+#     "python-dotenv>=1.0.0",
+#     "pydantic>=2.0.0"
 # ]
 # ///
 """
@@ -11,12 +15,34 @@ Uses git analysis and AI to estimate development time
 
 import asyncio
 import json
+import os
 import subprocess
-import random
 import sys
 from pathlib import Path
 from datetime import datetime
 from typing import List, Dict, Optional
+from dotenv import load_dotenv
+from pydantic import BaseModel, ValidationError
+from google import genai
+from google.genai import types
+from google.api_core import exceptions as google_exceptions
+
+
+# Constants for fallback estimation
+FALLBACK_BASE_HOURS = 0.5  # Minimum hours for any commits
+FALLBACK_LINES_PER_HOUR = 100  # Estimated lines of code per hour
+FALLBACK_MAX_HOURS = 8.0  # Maximum daily hours cap
+
+# Pydantic models for structured output
+class TaskSummary(BaseModel):
+    task: str
+    hours: float
+
+
+class CommitAnalysis(BaseModel):
+    total_hours: float
+    summary: str
+    major_tasks: List[TaskSummary]
 
 
 def load_project_config(config_path: Path = None) -> List[Dict[str, str]]:
@@ -121,39 +147,105 @@ def get_commits_for_day(repo_path: str, target_date: datetime) -> List[Dict[str,
 
 
 
-async def estimate_time_with_llm(commit_info: Dict) -> Dict[str, any]:
-    """
-    Stub: Simulates sending commit data to LLM for time estimation
+async def analyze_commits_batch(commits: List[Dict]) -> Dict[str, any]:
+    """Send all commits to Gemini at once for structured analysis"""
+    if not commits:
+        return {
+            'total_hours': 0,
+            'summary': 'No commits to analyze',
+            'major_tasks': []
+        }
     
-    In the future, this will send commit details to Claude for analysis
-    """
-    # Simulate async API call
-    await asyncio.sleep(0.1)
+    # Initialize client
+    client = genai.Client(api_key=os.getenv('GEMINI_API_KEY'))
     
-    # Mock responses based on imaginary LLM analysis
-    mock_responses = [
-        {"hours": 2.5, "summary": "Implemented user authentication flow with JWT tokens and session management"},
-        {"hours": 1.0, "summary": "Fixed critical bug in payment processing module affecting checkout flow"},
-        {"hours": 3.0, "summary": "Refactored database schema for better performance and added indexes"},
-        {"hours": 0.5, "summary": "Updated documentation and added comprehensive unit tests"},
-        {"hours": 1.5, "summary": "Created new API endpoints for customer data management"},
-        {"hours": 2.0, "summary": "Integrated third-party service for email notifications"},
-        {"hours": 0.75, "summary": "Optimized frontend bundle size and improved load times"},
-        {"hours": 4.0, "summary": "Built complete feature for real-time collaboration"},
-        {"hours": 1.25, "summary": "Resolved merge conflicts and standardized code formatting"},
-        {"hours": 2.75, "summary": "Implemented caching layer to reduce database queries"}
-    ]
+    # Format commits for the prompt
+    commits_text = "\n".join([
+        f"- [{commit['hash'][:8]}] {commit['message']} "
+        f"(+{commit['additions']}/-{commit['deletions']} in {commit['files']} files)"
+        for commit in commits
+    ])
     
-    # For now, return a random mock response
-    # In production, this would analyze the commit details
-    response = random.choice(mock_responses)
+    prompt = f"""Analyze these git commits from today and provide:
+1. Total estimated development time (including planning, coding, testing, debugging)
+2. A summary of what was accomplished
+3. Brief breakdown of major tasks
+
+Commits:
+{commits_text}
+
+Consider:
+- Related commits might be part of the same task
+- Small commits (typos, formatting) take minimal time
+- Large changes or new features take more time
+- Include overhead time for context switching
+- Be realistic with time estimates"""
     
-    # Add commit details to response
-    response['commit_hash'] = commit_info['hash']
-    response['author'] = commit_info['author']
-    response['message'] = commit_info['message']
-    
-    return response
+    try:
+        # Use structured output with Pydantic model
+        response = await client.aio.models.generate_content(
+            model='gemini-2.0-flash-001',
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                temperature=0.2,
+                response_mime_type='application/json',
+                response_schema=CommitAnalysis,  # Pydantic model ensures structure
+                max_output_tokens=1000
+            )
+        )
+        
+        # Parse and validate the structured response with Pydantic
+        analysis_result = CommitAnalysis.model_validate_json(response.text)
+        return analysis_result.model_dump()  # Return as dict for consistency
+        
+    except json.JSONDecodeError as e:
+        # Handle JSON parsing errors
+        print(f"JSON parsing error from Gemini API: {e}")
+        total_lines = sum(c['additions'] + c['deletions'] for c in commits)
+        hours = round(min(FALLBACK_BASE_HOURS + total_lines / FALLBACK_LINES_PER_HOUR, FALLBACK_MAX_HOURS), 2)
+        
+        return {
+            'total_hours': hours,
+            'summary': f'AI analysis failed (JSONDecodeError). Fallback: {len(commits)} commits, {total_lines} lines changed.',
+            'major_tasks': [],
+            'error': f'JSON parsing error: {e}'
+        }
+    except ValidationError as e:
+        # Handle Pydantic validation errors
+        print(f"Response validation error from Gemini API: {e}")
+        total_lines = sum(c['additions'] + c['deletions'] for c in commits)
+        hours = round(min(FALLBACK_BASE_HOURS + total_lines / FALLBACK_LINES_PER_HOUR, FALLBACK_MAX_HOURS), 2)
+        
+        return {
+            'total_hours': hours,
+            'summary': f'AI analysis failed (ValidationError). Fallback: {len(commits)} commits, {total_lines} lines changed.',
+            'major_tasks': [],
+            'error': f'Response validation error: {e}'
+        }
+    except google_exceptions.GoogleAPIError as e:
+        # Handle specific Google API errors
+        print(f"Gemini API Error: {type(e).__name__}: {e}")
+        total_lines = sum(c['additions'] + c['deletions'] for c in commits)
+        hours = round(min(FALLBACK_BASE_HOURS + total_lines / FALLBACK_LINES_PER_HOUR, FALLBACK_MAX_HOURS), 2)
+        
+        return {
+            'total_hours': hours,
+            'summary': f'AI analysis failed ({type(e).__name__}). Fallback: {len(commits)} commits, {total_lines} lines changed.',
+            'major_tasks': [],
+            'error': str(e)
+        }
+    except Exception as e:
+        # Catch any other unexpected exceptions
+        print(f"An unexpected error occurred: {type(e).__name__}: {e}")
+        total_lines = sum(c['additions'] + c['deletions'] for c in commits)
+        hours = round(min(FALLBACK_BASE_HOURS + total_lines / FALLBACK_LINES_PER_HOUR, FALLBACK_MAX_HOURS), 2)
+        
+        return {
+            'total_hours': hours,
+            'summary': f'AI analysis failed (Unexpected Error). Fallback: {len(commits)} commits, {total_lines} lines changed.',
+            'major_tasks': [],
+            'error': str(e)
+        }
 
 
 async def analyze_project(project: Dict[str, str], since: datetime) -> Dict:
@@ -184,29 +276,21 @@ async def analyze_project(project: Dict[str, str], since: datetime) -> Dict:
             'name': project_name,
             'commits': 0,
             'total_hours': 0,
-            'summaries': []
+            'summary': 'No commits today',
+            'major_tasks': []
         }
     
-    # Analyze each commit with the LLM stub
-    tasks = []
-    for commit in commits:
-        # Stats are already included in commit from get_commits_since
-        # Create async task for LLM analysis
-        task = estimate_time_with_llm(commit)
-        tasks.append(task)
-    
-    # Wait for all LLM analyses to complete
-    results = await asyncio.gather(*tasks)
-    
-    # Calculate totals
-    total_hours = sum(r['hours'] for r in results)
+    # Analyze ALL commits in one API call
+    analysis = await analyze_commits_batch(commits)
     
     return {
         'name': project_name,
         'path': project_path,
         'commits': len(commits),
-        'total_hours': total_hours,
-        'summaries': results
+        'total_hours': analysis.get('total_hours', 0),
+        'summary': analysis.get('summary', ''),
+        'major_tasks': analysis.get('major_tasks', []),
+        'error': analysis.get('error')
     }
 
 
@@ -214,26 +298,28 @@ def print_project_summary(project_result: Dict):
     """Print a formatted summary for a project"""
     name = project_result['name']
     
-    if 'error' in project_result:
+    if project_result.get('error'):
         print(f"\n{name}: ❌ {project_result['error']}")
         return
     
     commits = project_result['commits']
     hours = project_result['total_hours']
+    summary = project_result.get('summary', '')
     
     print(f"\n{name}:")
     print(f"  📊 Commits: {commits}")
     print(f"  ⏱️  Time: {hours:.2f} hours")
     
-    if project_result['summaries']:
-        print("  📝 Work summary:")
-        # Show top 3 work items by time
-        top_work = sorted(project_result['summaries'], 
-                         key=lambda x: x['hours'], 
-                         reverse=True)[:3]
-        
-        for work in top_work:
-            print(f"     - {work['hours']}h: {work['summary']}")
+    if summary:
+        print(f"  📝 Summary: {summary}")
+    
+    major_tasks = project_result.get('major_tasks', [])
+    if major_tasks:
+        print("  🎯 Major tasks:")
+        # Sort by hours descending and take the top 5
+        sorted_tasks = sorted(major_tasks, key=lambda t: t.get('hours', 0), reverse=True)[:5]
+        for task in sorted_tasks:
+            print(f"     - {task['task']} ({task.get('hours', 0)}h)")
 
 
 def parse_date_argument() -> Optional[datetime]:
@@ -263,6 +349,18 @@ def parse_date_argument() -> Optional[datetime]:
 
 async def main():
     """Main execution function"""
+    # Load environment variables
+    load_dotenv()
+    
+    # Check for API key
+    if not os.getenv('GEMINI_API_KEY'):
+        print("Error: GEMINI_API_KEY not found in environment or .env file")
+        print("Please set your Gemini API key:")
+        print("  export GEMINI_API_KEY='your-api-key'")
+        print("Or add it to .env file")
+        print("\nGet your API key from: https://makersuite.google.com/app/apikey")
+        sys.exit(1)
+    
     print(f"Timekeep - Running at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 50)
     
@@ -293,7 +391,7 @@ async def main():
         total_hours_all = 0
         for result in results:
             print_project_summary(result)
-            if 'error' not in result:
+            if not result.get('error'):
                 total_hours_all += result['total_hours']
         
         print("\n" + "=" * 50)
