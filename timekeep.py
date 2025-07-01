@@ -56,11 +56,11 @@ def run_git_command(cmd: List[str], cwd: str) -> Optional[str]:
         return None
 
 
-def get_commits_since(repo_path: str, since: datetime) -> List[Dict[str, any]]:
-    """Get all commits from all branches since a given date with statistics"""
+def get_commits_for_day(repo_path: str, target_date: datetime) -> List[Dict[str, any]]:
+    """Get all commits from all branches for a specific day with statistics"""
     # Format dates for git (analyze full day from midnight to midnight)
-    since_str = since.strftime("%Y-%m-%d %H:%M:%S")
-    until = since.replace(hour=23, minute=59, second=59)
+    since_str = target_date.strftime("%Y-%m-%d %H:%M:%S")
+    until = target_date.replace(hour=23, minute=59, second=59)
     until_str = until.strftime("%Y-%m-%d %H:%M:%S")
     
     # Get commits with file statistics in a single command
@@ -177,7 +177,7 @@ async def analyze_project(project: Dict[str, str], since: datetime) -> Dict:
         }
     
     # Get commits
-    commits = get_commits_since(project_path, since)
+    commits = get_commits_for_day(project_path, since)
     
     if not commits:
         return {
