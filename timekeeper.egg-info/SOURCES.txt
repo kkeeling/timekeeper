@@ -1,0 +1,9 @@
+README.md
+pyproject.toml
+timekeeper.py
+timekeeper.egg-info/PKG-INFO
+timekeeper.egg-info/SOURCES.txt
+timekeeper.egg-info/dependency_links.txt
+timekeeper.egg-info/entry_points.txt
+timekeeper.egg-info/requires.txt
+timekeeper.egg-info/top_level.txt

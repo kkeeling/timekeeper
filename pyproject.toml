@@ -1,0 +1,17 @@
+[project]
+name = "timekeeper"
+version = "0.2.0"
+description = "Automated time tracking using git analysis and AI"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "python-dotenv>=1.0.0",
+    "anyio>=4.0.0",
+]
+
+[project.scripts]
+timekeeper = "timekeeper:run"
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"

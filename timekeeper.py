@@ -1,0 +1,303 @@
+#!/usr/bin/env python3
+"""
+Timekeep - Automated time tracking for development projects
+Uses git analysis and AI to estimate development time
+"""
+
+import asyncio
+import anyio
+import json
+import subprocess
+import random
+from pathlib import Path
+from datetime import datetime, timedelta
+from typing import List, Dict, Optional
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
+
+def load_project_config(config_path: Path = None) -> List[Dict[str, str]]:
+    """Load project configuration from JSON file"""
+    if config_path is None:
+        config_path = Path(__file__).parent / "projects.json"
+    
+    if not config_path.exists():
+        raise FileNotFoundError(f"Project configuration file not found: {config_path}")
+    
+    with open(config_path, 'r') as f:
+        projects = json.load(f)
+    
+    # Expand home directory paths
+    for project in projects:
+        project['path'] = str(Path(project['path']).expanduser())
+    
+    return projects
+
+
+def run_git_command(cmd: str, cwd: str) -> Optional[str]:
+    """Execute a git command and return output"""
+    try:
+        result = subprocess.run(
+            cmd.split(),
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        return result.stdout.strip()
+    except subprocess.CalledProcessError as e:
+        print(f"Git command failed in {cwd}: {e.stderr}")
+        return None
+    except Exception as e:
+        print(f"Error running git command: {e}")
+        return None
+
+
+def get_commits_since(repo_path: str, since: datetime) -> List[Dict[str, str]]:
+    """Get all commits from all branches since a given date"""
+    # Format date for git
+    since_str = since.strftime("%Y-%m-%d %H:%M:%S")
+    
+    # Get all commits from all branches, excluding merges
+    cmd = f'git log --all --no-merges --since="{since_str}" --format=%H|||%an|||%ae|||%at|||%s'
+    output = run_git_command(cmd, repo_path)
+    
+    if not output:
+        return []
+    
+    commits = []
+    seen_hashes = set()
+    
+    for line in output.splitlines():
+        if not line:
+            continue
+            
+        parts = line.split('|||')
+        if len(parts) != 5:
+            continue
+            
+        commit_hash = parts[0]
+        
+        # Skip duplicate commits (same commit on multiple branches)
+        if commit_hash in seen_hashes:
+            continue
+        seen_hashes.add(commit_hash)
+        
+        commits.append({
+            'hash': commit_hash,
+            'author': parts[1],
+            'email': parts[2],
+            'timestamp': int(parts[3]),
+            'message': parts[4]
+        })
+    
+    return commits
+
+
+def get_commit_stats(repo_path: str, commit_hash: str) -> Dict[str, int]:
+    """Get statistics for a specific commit"""
+    # Get the number of files changed and lines added/deleted
+    cmd = f"git show --numstat --format= {commit_hash}"
+    output = run_git_command(cmd, repo_path)
+    
+    if not output:
+        return {'files': 0, 'additions': 0, 'deletions': 0}
+    
+    files = 0
+    additions = 0
+    deletions = 0
+    
+    for line in output.splitlines():
+        if not line or line.startswith('\\'):
+            continue
+            
+        parts = line.split('\t')
+        if len(parts) >= 3:
+            files += 1
+            try:
+                # Handle binary files which show '-'
+                add = int(parts[0]) if parts[0] != '-' else 0
+                delete = int(parts[1]) if parts[1] != '-' else 0
+                additions += add
+                deletions += delete
+            except ValueError:
+                continue
+    
+    return {
+        'files': files,
+        'additions': additions,
+        'deletions': deletions
+    }
+
+
+async def estimate_time_with_llm(commit_info: Dict) -> Dict[str, any]:
+    """
+    Stub: Simulates sending commit data to LLM for time estimation
+    
+    In the future, this will send commit details to Claude for analysis
+    """
+    # Simulate async API call
+    await asyncio.sleep(0.1)
+    
+    # Mock responses based on imaginary LLM analysis
+    mock_responses = [
+        {"hours": 2.5, "summary": "Implemented user authentication flow with JWT tokens and session management"},
+        {"hours": 1.0, "summary": "Fixed critical bug in payment processing module affecting checkout flow"},
+        {"hours": 3.0, "summary": "Refactored database schema for better performance and added indexes"},
+        {"hours": 0.5, "summary": "Updated documentation and added comprehensive unit tests"},
+        {"hours": 1.5, "summary": "Created new API endpoints for customer data management"},
+        {"hours": 2.0, "summary": "Integrated third-party service for email notifications"},
+        {"hours": 0.75, "summary": "Optimized frontend bundle size and improved load times"},
+        {"hours": 4.0, "summary": "Built complete feature for real-time collaboration"},
+        {"hours": 1.25, "summary": "Resolved merge conflicts and standardized code formatting"},
+        {"hours": 2.75, "summary": "Implemented caching layer to reduce database queries"}
+    ]
+    
+    # For now, return a random mock response
+    # In production, this would analyze the commit details
+    response = random.choice(mock_responses)
+    
+    # Add commit details to response
+    response['commit_hash'] = commit_info['hash']
+    response['author'] = commit_info['author']
+    response['message'] = commit_info['message']
+    
+    return response
+
+
+async def analyze_project(project: Dict[str, str], since: datetime) -> Dict:
+    """Analyze a single project's git history"""
+    project_path = project['path']
+    project_name = project['name']
+    
+    # Check if path exists and is a git repo
+    if not Path(project_path).exists():
+        return {
+            'name': project_name,
+            'error': f"Path does not exist: {project_path}",
+            'total_hours': 0
+        }
+    
+    if not Path(project_path, '.git').exists():
+        return {
+            'name': project_name,
+            'error': f"Not a git repository: {project_path}",
+            'total_hours': 0
+        }
+    
+    # Get commits
+    commits = get_commits_since(project_path, since)
+    
+    if not commits:
+        return {
+            'name': project_name,
+            'commits': 0,
+            'total_hours': 0,
+            'summaries': []
+        }
+    
+    # Analyze each commit with the LLM stub
+    tasks = []
+    for commit in commits:
+        # Add commit stats
+        stats = get_commit_stats(project_path, commit['hash'])
+        commit.update(stats)
+        
+        # Create async task for LLM analysis
+        task = estimate_time_with_llm(commit)
+        tasks.append(task)
+    
+    # Wait for all LLM analyses to complete
+    results = await asyncio.gather(*tasks)
+    
+    # Calculate totals
+    total_hours = sum(r['hours'] for r in results)
+    
+    return {
+        'name': project_name,
+        'path': project_path,
+        'commits': len(commits),
+        'total_hours': total_hours,
+        'summaries': results
+    }
+
+
+def print_project_summary(project_result: Dict):
+    """Print a formatted summary for a project"""
+    name = project_result['name']
+    
+    if 'error' in project_result:
+        print(f"\n{name}: ❌ {project_result['error']}")
+        return
+    
+    commits = project_result['commits']
+    hours = project_result['total_hours']
+    
+    print(f"\n{name}:")
+    print(f"  📊 Commits: {commits}")
+    print(f"  ⏱️  Time: {hours:.2f} hours")
+    
+    if project_result['summaries']:
+        print("  📝 Work summary:")
+        # Show top 3 work items by time
+        top_work = sorted(project_result['summaries'], 
+                         key=lambda x: x['hours'], 
+                         reverse=True)[:3]
+        
+        for work in top_work:
+            print(f"     - {work['hours']}h: {work['summary']}")
+
+
+async def main():
+    """Main execution function"""
+    print(f"Timekeep - Running at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print("=" * 50)
+    
+    try:
+        # Load project configuration
+        projects = load_project_config()
+        print(f"Loaded {len(projects)} projects from configuration")
+        
+        # Set time range (today)
+        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        
+        print(f"\nAnalyzing commits since: {today.strftime('%Y-%m-%d %H:%M:%S')}")
+        print("-" * 50)
+        
+        # Analyze each project
+        tasks = []
+        for project in projects:
+            task = analyze_project(project, today)
+            tasks.append(task)
+        
+        # Wait for all analyses to complete
+        results = await asyncio.gather(*tasks)
+        
+        # Print summaries
+        total_hours_all = 0
+        for result in results:
+            print_project_summary(result)
+            if 'error' not in result:
+                total_hours_all += result['total_hours']
+        
+        print("\n" + "=" * 50)
+        print(f"Total time across all projects: {total_hours_all:.2f} hours")
+        
+    except FileNotFoundError as e:
+        print(f"Error: {e}")
+        print("Please create a projects.json file with your project configurations")
+    except Exception as e:
+        print(f"Unexpected error: {e}")
+        import traceback
+        traceback.print_exc()
+
+
+def run():
+    """Entry point for the timekeeper command"""
+    anyio.run(main)
+
+
+if __name__ == "__main__":
+    run()
