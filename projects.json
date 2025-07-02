@@ -1,21 +1,27 @@
 [
   {
-    "name": "Timekeeper",
-    "path": "~/Documents/_projects/timekeeper",
-    "timecamp_task_id": null,
+    "name": "Meridian/Penzai",
+    "path": "~/Documents/_projects/meridian",
+    "timecamp_task_id": 175939082,
     "timecamp_enabled": true
   },
   {
-    "name": "Meridian/Penzai",
-    "path": "~/Documents/_projects/meridian"
+    "name": "Pythia v3",
+    "path": "~/Documents/_projects/pythia-v3",
+    "timecamp_task_id": 176208691,
+    "timecamp_enabled": true
   },
   {
     "name": "Pythia",
-    "path": "~/Documents/_projects/pythia-v3"
+    "path": "~/Documents/_projects/pythia",
+    "timecamp_task_id": 176208691,
+    "timecamp_enabled": true
   },
   {
     "name": "Bigeq",
-    "path": "~/Documents/_projects/bigeq"
+    "path": "~/Documents/_projects/bigeq",
+    "timecamp_task_id": 175882004,
+    "timecamp_enabled": true
   },
   {
     "name": "Bestball Draft Analyzer",

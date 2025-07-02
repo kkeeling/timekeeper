@@ -293,8 +293,8 @@ Consider:
         analysis_result = CommitAnalysis.model_validate_json(response.text)
         result_dict = analysis_result.model_dump()
         
-        # Divide all time estimates by 4
-        result_dict['total_hours'] = round(result_dict['total_hours'] / 4, 2)
+        # Divide all time estimates by 4 and cap total_hours at 10
+        result_dict['total_hours'] = min(round(result_dict['total_hours'] / 4, 2), 10)
         for task in result_dict.get('major_tasks', []):
             task['hours'] = round(task['hours'] / 4, 2)
         
