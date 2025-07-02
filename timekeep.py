@@ -96,10 +96,24 @@ class TimeCampClient:
             
             response.raise_for_status()
             
-            return {
-                'success': True,
-                'data': response.json()
-            }
+            # Debug: Check if response has content
+            if not response.text:
+                return {
+                    'success': True,
+                    'data': {'message': 'Time entry created successfully (no response body)'}
+                }
+            
+            try:
+                return {
+                    'success': True,
+                    'data': response.json()
+                }
+            except json.JSONDecodeError:
+                # Some APIs return 200 with empty body on success
+                return {
+                    'success': True,
+                    'data': {'message': 'Time entry created successfully', 'response': response.text[:100]}
+                }
             
         except requests.exceptions.Timeout:
             return {
