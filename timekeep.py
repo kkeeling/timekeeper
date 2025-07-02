@@ -60,7 +60,7 @@ class TimeCampClient:
         }
     
     def create_time_entry(self, task_id: int, duration: float, date_str: str, 
-                         note: str = '') -> Dict[str, any]:
+                        note: str = '') -> Dict[str, any]:
         """
         Create a time entry in TimeCamp
         
