@@ -1,10 +1,26 @@
 [
   {
     "name": "Timekeeper",
-    "path": "~/Documents/_projects/timekeeper"
+    "path": "~/Documents/_projects/timekeeper",
+    "timecamp_task_id": null,
+    "timecamp_enabled": true
   },
   {
     "name": "Meridian/Penzai",
     "path": "~/Documents/_projects/meridian"
+  },
+  {
+    "name": "Pythia",
+    "path": "~/Documents/_projects/pythia-v3"
+  },
+  {
+    "name": "Bigeq",
+    "path": "~/Documents/_projects/bigeq"
+  },
+  {
+    "name": "Bestball Draft Analyzer",
+    "path": "~/Documents/_projects/bestball-draft-analyzer",
+    "timecamp_task_id": 174721345,
+    "timecamp_enabled": true
   }
 ]

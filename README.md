@@ -1,15 +1,18 @@
 # Timekeep
 
-A single-file time tracking tool that analyzes git commits across multiple projects to estimate development time. Uses AI-powered analysis (currently stubbed) to provide intelligent time estimates and work summaries.
+A single-file time tracking tool that analyzes git commits across multiple projects to estimate development time. Uses Google Gemini AI to provide intelligent time estimates and comprehensive work summaries.
 
 ## Features
 
 - Single-file script using `uv`'s inline dependency management
 - Analyzes git commits from ALL branches (not just main/current)
 - Local JSON configuration for project paths
-- Async LLM stub for future AI-powered time estimation
+- **Google Gemini AI integration** for intelligent time estimation
+- **Batch processing** - sends all commits in one API call for better context and cost efficiency
+- **Structured outputs** using Pydantic models for reliable JSON responses
 - De-duplicates commits across branches
-- Generates daily summaries with time estimates
+- Generates daily summaries with time estimates and major task breakdowns
+- **TimeCamp integration** (optional) - automatically creates time entries from analyzed commits
 
 ## Setup
 
@@ -18,12 +21,22 @@ A single-file time tracking tool that analyzes git commits across multiple proje
    curl -LsSf https://astral.sh/uv/install.sh | sh
    ```
 
-2. Create a `projects.json` file in the same directory as `timekeep.py`:
+2. Get a Google Gemini API key:
+   - Visit https://makersuite.google.com/app/apikey
+   - Create a new API key
+   - Add it to `.env` file:
+     ```bash
+     GEMINI_API_KEY=your-actual-api-key-here
+     ```
+
+3. Create a `projects.json` file in the same directory as `timekeep.py`:
    ```json
    [
      {
        "name": "My Project",
-       "path": "~/dev/my-project"
+       "path": "~/dev/my-project",
+       "timecamp_task_id": 123456,
+       "timecamp_enabled": true
      },
      {
        "name": "Another Project", 
@@ -31,6 +44,40 @@ A single-file time tracking tool that analyzes git commits across multiple proje
      }
    ]
    ```
+
+### TimeCamp Integration (Optional)
+
+To enable automatic time tracking with TimeCamp:
+
+1. Get your TimeCamp API token:
+   - Log in to TimeCamp: https://app.timecamp.com
+   - Go to Settings → Your Profile: https://app.timecamp.com/app#/settings/users/me
+   - Copy your API token
+
+2. Add the token to your `.env` file:
+   ```bash
+   TIMECAMP_API_TOKEN=your-actual-timecamp-token-here
+   ```
+
+3. Find your TimeCamp task IDs:
+   - Use the TimeCamp web interface to find task IDs
+   - Or run this curl command with your token:
+     ```bash
+     curl -H "Authorization: YOUR_TOKEN" https://www.timecamp.com/third_party/api/tasks
+     ```
+
+4. Update `projects.json` with TimeCamp task IDs:
+   ```json
+   {
+     "name": "Project Name",
+     "path": "~/dev/project",
+     "timecamp_task_id": 123456,
+     "timecamp_enabled": true
+   }
+   ```
+
+   - `timecamp_task_id`: The ID of the task in TimeCamp
+   - `timecamp_enabled`: Set to `false` to disable for specific projects
 
 ## Usage
 
@@ -42,6 +89,10 @@ uv run timekeep.py
 # Analyze commits from a specific date
 uv run timekeep.py 2025-01-01
 uv run timekeep.py 2025-06-30
+
+# Disable TimeCamp integration for this run
+uv run timekeep.py --no-timecamp
+uv run timekeep.py 2025-01-01 --no-timecamp
 ```
 
 The script accepts dates in multiple formats:
@@ -62,18 +113,21 @@ Analyzing commits since: 2025-01-01 00:00:00
 My Project:
   📊 Commits: 5
   ⏱️  Time: 7.50 hours
-  📝 Work summary:
-     - 3.0h: Refactored database schema for better performance
-     - 2.5h: Implemented user authentication flow
-     - 1.0h: Fixed critical bug in payment module
+  📝 Summary: Implemented user authentication system with JWT tokens, refactored database schema for improved performance, and fixed critical payment processing bug
+  🎯 Major tasks:
+     - Refactored database schema for better performance (3.0h)
+     - Implemented user authentication flow with JWT (2.5h)
+     - Fixed critical bug in payment module (1.0h)
+  ✅ Submitted to TimeCamp: 7.50h
 
 Another Project:
   📊 Commits: 3
   ⏱️  Time: 4.25 hours
-  📝 Work summary:
-     - 2.0h: Integrated third-party email service
-     - 1.5h: Created new API endpoints
-     - 0.75h: Optimized frontend bundle size
+  📝 Summary: Integrated email notification system, expanded API with new endpoints, and optimized application performance
+  🎯 Major tasks:
+     - Integrated third-party email service (2.0h)
+     - Created customer data management endpoints (1.5h)
+     - Optimized frontend bundle size (0.75h)
 
 ==================================================
 Total time across all projects: 11.75 hours
@@ -105,9 +159,11 @@ crontab -e
 2. **Project Configuration**: Reads local `projects.json` for repository paths
 3. **Git Analysis**: Scans ALL branches for commits since midnight
 4. **Commit De-duplication**: Removes duplicate commits across branches
-5. **Time Estimation**: Currently uses stub that returns mock data
-   - Future: Will send commit details to Claude for intelligent analysis
-6. **Summary Generation**: Shows top work items by time spent
+5. **Batch AI Analysis**: Sends all commits for a project in a single API call to Google Gemini
+   - Uses structured output with Pydantic models for reliable JSON responses
+   - Provides better context for more accurate time estimates
+   - Cost-efficient (one API call per project instead of per commit)
+6. **Summary Generation**: Shows overall summary and major tasks with time breakdowns
 
 ## Architecture
 
@@ -123,16 +179,22 @@ The script includes inline metadata for `uv`:
 # /// script
 # requires-python = ">=3.12"
 # dependencies = [
+#     "google-genai>=0.2.0",
+#     "google-api-core>=2.0.0",
 #     "python-dotenv>=1.0.0",
+#     "pydantic>=2.0.0",
+#     "requests>=2.31.0"
 # ]
 # ///
 ```
 
 ## Future Enhancements
 
-- [ ] Real LLM integration for intelligent time estimation
+- [x] Google Gemini AI integration for intelligent time estimation
+- [x] Batch processing for cost efficiency
+- [x] Structured outputs with Pydantic
+- [x] TimeCamp API integration for automatic time entry
 - [ ] Caching to avoid re-analyzing same commits
-- [ ] TimeCamp API integration for automatic time entry
 - [ ] Configurable time ranges (week, month, custom)
 - [ ] Export to CSV/JSON formats
 - [ ] Click CLI interface for better command-line options
@@ -140,11 +202,12 @@ The script includes inline metadata for `uv`:
 
 ## Development
 
-The LLM stub (`estimate_time_with_llm`) currently returns random mock data. To integrate real AI analysis:
+The tool now uses Google Gemini AI for intelligent time analysis:
 
-1. Replace the stub with actual Claude Code SDK calls
-2. Send commit details (message, files changed, diff stats)
-3. Parse AI response for time estimate and work summary
+1. **Batch Processing**: All commits for a project are sent in a single API call
+2. **Structured Output**: Uses Pydantic models to ensure reliable JSON responses
+3. **Smart Analysis**: Gemini understands related commits and provides holistic time estimates
+4. **Cost Efficient**: Approximately $0.00015 per project analysis (vs $0.003 with individual calls)
 
 ### Adding Dependencies
 
