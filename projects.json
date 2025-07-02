@@ -1,26 +1,37 @@
 [
   {
-    "name": "Timekeeper",
-    "path": "~/Documents/_projects/timekeeper",
-    "timecamp_task_id": null,
-    "timecamp_enabled": true
+    "name": "Meridian/Penzai",
+    "path": "~/Documents/_projects/meridian",
+    "timecamp_task_id": 175939082,
+    "timecamp_enabled": true,
+    "author_email": "keenan.keeling@releafapp.com"
   },
   {
-    "name": "Meridian/Penzai",
-    "path": "~/Documents/_projects/meridian"
+    "name": "Pythia v3",
+    "path": "~/Documents/_projects/pythia-v3",
+    "timecamp_task_id": 176208691,
+    "timecamp_enabled": true,
+    "author_email": "kkeeling@gmail.com"
   },
   {
     "name": "Pythia",
-    "path": "~/Documents/_projects/pythia-v3"
+    "path": "~/Documents/_projects/pythia",
+    "timecamp_task_id": 176208691,
+    "timecamp_enabled": true,
+    "author_email": "kkeeling@gmail.com"
   },
   {
     "name": "Bigeq",
-    "path": "~/Documents/_projects/bigeq"
+    "path": "~/Documents/_projects/bigeq",
+    "timecamp_task_id": 174721347,
+    "timecamp_enabled": true,
+    "author_email": "kkeeling@gmail.com"
   },
   {
     "name": "Bestball Draft Analyzer",
     "path": "~/Documents/_projects/bestball-draft-analyzer",
     "timecamp_task_id": 174721345,
-    "timecamp_enabled": true
+    "timecamp_enabled": true,
+    "author_email": "kkeeling@gmail.com"
   }
 ]

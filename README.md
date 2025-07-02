@@ -12,6 +12,9 @@ A single-file time tracking tool that analyzes git commits across multiple proje
 - **Structured outputs** using Pydantic models for reliable JSON responses
 - De-duplicates commits across branches
 - Generates daily summaries with time estimates and major task breakdowns
+- **Time rounding** - rounds all time estimates to the nearest half hour
+- **Daily cap** - limits time tracking to a maximum of 10 hours per project per day
+- **Author filtering** - tracks only your commits by automatically detecting and storing your git email per project
 - **TimeCamp integration** (optional) - automatically creates time entries from analyzed commits
 
 ## Setup
@@ -93,7 +96,30 @@ uv run timekeep.py 2025-06-30
 # Disable TimeCamp integration for this run
 uv run timekeep.py --no-timecamp
 uv run timekeep.py 2025-01-01 --no-timecamp
+
+# Force reconfiguration of author emails for all projects
+uv run timekeep.py --reconfigure-author
 ```
+
+### Author Configuration
+
+Timekeep automatically filters commits to only track those made by you. On first run for each project:
+
+1. It checks your git configuration (local repository config first, then global)
+2. Shows you the detected email and asks for confirmation
+3. If confirmed, saves it to `projects.json` for future runs
+4. If not confirmed, prompts you to enter the correct email
+
+The author email is stored per project in `projects.json`:
+```json
+{
+  "name": "My Project",
+  "path": "~/dev/my-project",
+  "author_email": "developer@example.com"
+}
+```
+
+This allows you to use different email addresses for different projects (e.g., personal vs work projects).
 
 The script accepts dates in multiple formats:
 - `YYYY-MM-DD` (recommended)
