@@ -34,7 +34,7 @@ import requests
 # Constants for fallback estimation
 FALLBACK_BASE_HOURS = 0.5  # Minimum hours for any commits
 FALLBACK_LINES_PER_HOUR = 100  # Estimated lines of code per hour
-FALLBACK_MAX_HOURS = 8.0  # Maximum daily hours cap
+FALLBACK_MAX_HOURS = 40.0  # Maximum daily hours cap (before division by 4)
 
 # Pydantic models for structured output
 class TaskSummary(BaseModel):
@@ -177,8 +177,82 @@ def run_git_command(cmd: List[str], cwd: str) -> Optional[str]:
         return None
 
 
-def get_commits_for_day(repo_path: str, target_date: datetime) -> List[Dict[str, any]]:
-    """Get all commits from all branches for a specific day with statistics"""
+def get_git_author_email(repo_path: str) -> Optional[str]:
+    """Get the git author email for a repository, checking local config first then global"""
+    # Try local repository config first
+    local_email = run_git_command(['git', 'config', 'user.email'], repo_path)
+    if local_email:
+        return local_email
+    
+    # Fall back to global config
+    global_email = run_git_command(['git', 'config', '--global', 'user.email'], repo_path)
+    return global_email
+
+
+def save_projects_config(projects: List[Dict[str, Any]], config_path: Path = None) -> None:
+    """Save the projects configuration back to JSON file"""
+    if config_path is None:
+        config_path = Path(__file__).parent / "projects.json"
+    
+    # Convert paths back to strings with ~ for home directory
+    projects_to_save = []
+    for project in projects:
+        project_copy = project.copy()
+        # Convert absolute path back to ~ notation if it's in home directory
+        path = Path(project_copy['path'])
+        home = Path.home()
+        try:
+            relative_to_home = path.relative_to(home)
+            project_copy['path'] = f"~/{relative_to_home}"
+        except ValueError:
+            # Path is not relative to home, keep as is
+            project_copy['path'] = str(path)
+        projects_to_save.append(project_copy)
+    
+    with open(config_path, 'w') as f:
+        json.dump(projects_to_save, f, indent=2)
+        f.write('\n')  # Add trailing newline
+
+
+def confirm_and_save_author(project: Dict[str, Any], detected_email: Optional[str], 
+                           all_projects: List[Dict[str, Any]], force_reconfigure: bool = False) -> Optional[str]:
+    """Interactively confirm or set the author email for a project"""
+    project_name = project['name']
+    
+    # Check if already configured and not forcing reconfiguration
+    if 'author_email' in project and not force_reconfigure:
+        return project['author_email']
+    
+    print(f"\n📧 Configuring author email for '{project_name}'...")
+    
+    if detected_email:
+        print(f"Detected git author email: {detected_email}")
+        response = input("Use this email for tracking your commits? (y/n): ").strip().lower()
+        
+        if response == 'y':
+            project['author_email'] = detected_email
+            save_projects_config(all_projects)
+            print(f"✅ Saved author email for '{project_name}'")
+            return detected_email
+    else:
+        print("No git author email detected in local or global config.")
+    
+    # Ask for email
+    while True:
+        email = input("Enter the email address used for your commits in this project: ").strip()
+        if email and '@' in email:
+            project['author_email'] = email
+            save_projects_config(all_projects)
+            print(f"✅ Saved author email for '{project_name}'")
+            return email
+        else:
+            print("Please enter a valid email address.")
+    
+    return None
+
+
+def get_commits_for_day(repo_path: str, target_date: datetime, author_email: Optional[str] = None) -> List[Dict[str, any]]:
+    """Get all commits from all branches for a specific day with statistics, optionally filtered by author"""
     # Format dates for git (analyze full day from midnight to midnight)
     since_str = target_date.strftime("%Y-%m-%d %H:%M:%S")
     until = target_date.replace(hour=23, minute=59, second=59)
@@ -191,6 +265,11 @@ def get_commits_for_day(repo_path: str, target_date: datetime) -> List[Dict[str,
         '--format=COMMIT_BOUNDARY|||%H|||%an|||%ae|||%at|||%s',
         '--numstat'
     ]
+    
+    # Add author filter if provided
+    if author_email:
+        cmd.insert(3, f'--author={author_email}')
+    
     output = run_git_command(cmd, repo_path)
     
     if not output:
@@ -240,6 +319,11 @@ def get_commits_for_day(repo_path: str, target_date: datetime) -> List[Dict[str,
     
     return commits
 
+
+
+def round_to_half_hour(hours: float) -> float:
+    """Round hours to the nearest half hour (0.5 increments)"""
+    return round(hours * 2) / 2
 
 
 async def analyze_commits_batch(commits: List[Dict]) -> Dict[str, any]:
@@ -293,10 +377,10 @@ Consider:
         analysis_result = CommitAnalysis.model_validate_json(response.text)
         result_dict = analysis_result.model_dump()
         
-        # Divide all time estimates by 4 and cap total_hours at 10
-        result_dict['total_hours'] = min(round(result_dict['total_hours'] / 4, 2), 10)
+        # Divide all time estimates by 4, round to nearest half hour, and cap total_hours at 10
+        result_dict['total_hours'] = min(round_to_half_hour(result_dict['total_hours'] / 4), 10)
         for task in result_dict.get('major_tasks', []):
-            task['hours'] = round(task['hours'] / 4, 2)
+            task['hours'] = round_to_half_hour(task['hours'] / 4)
         
         return result_dict
         
@@ -304,7 +388,7 @@ Consider:
         # Handle JSON parsing errors
         print(f"JSON parsing error from Gemini API: {e}")
         total_lines = sum(c['additions'] + c['deletions'] for c in commits)
-        hours = round(min(FALLBACK_BASE_HOURS + total_lines / FALLBACK_LINES_PER_HOUR, FALLBACK_MAX_HOURS) / 4, 2)
+        hours = min(round_to_half_hour((FALLBACK_BASE_HOURS + total_lines / FALLBACK_LINES_PER_HOUR) / 4), 10)
         
         return {
             'total_hours': hours,
@@ -316,7 +400,7 @@ Consider:
         # Handle Pydantic validation errors
         print(f"Response validation error from Gemini API: {e}")
         total_lines = sum(c['additions'] + c['deletions'] for c in commits)
-        hours = round(min(FALLBACK_BASE_HOURS + total_lines / FALLBACK_LINES_PER_HOUR, FALLBACK_MAX_HOURS) / 4, 2)
+        hours = min(round_to_half_hour((FALLBACK_BASE_HOURS + total_lines / FALLBACK_LINES_PER_HOUR) / 4), 10)
         
         return {
             'total_hours': hours,
@@ -328,7 +412,7 @@ Consider:
         # Handle specific Google API errors
         print(f"Gemini API Error: {type(e).__name__}: {e}")
         total_lines = sum(c['additions'] + c['deletions'] for c in commits)
-        hours = round(min(FALLBACK_BASE_HOURS + total_lines / FALLBACK_LINES_PER_HOUR, FALLBACK_MAX_HOURS) / 4, 2)
+        hours = min(round_to_half_hour((FALLBACK_BASE_HOURS + total_lines / FALLBACK_LINES_PER_HOUR) / 4), 10)
         
         return {
             'total_hours': hours,
@@ -340,7 +424,7 @@ Consider:
         # Catch any other unexpected exceptions
         print(f"An unexpected error occurred: {type(e).__name__}: {e}")
         total_lines = sum(c['additions'] + c['deletions'] for c in commits)
-        hours = round(min(FALLBACK_BASE_HOURS + total_lines / FALLBACK_LINES_PER_HOUR, FALLBACK_MAX_HOURS) / 4, 2)
+        hours = min(round_to_half_hour((FALLBACK_BASE_HOURS + total_lines / FALLBACK_LINES_PER_HOUR) / 4), 10)
         
         return {
             'total_hours': hours,
@@ -350,7 +434,8 @@ Consider:
         }
 
 
-async def analyze_project(project: Dict[str, str], since: datetime) -> Dict:
+async def analyze_project(project: Dict[str, str], since: datetime, 
+                         all_projects: List[Dict[str, Any]], force_reconfigure: bool = False) -> Dict:
     """Analyze a single project's git history"""
     project_path = project['path']
     project_name = project['name']
@@ -370,15 +455,26 @@ async def analyze_project(project: Dict[str, str], since: datetime) -> Dict:
             'total_hours': 0
         }
     
-    # Get commits
-    commits = get_commits_for_day(project_path, since)
+    # Get or confirm author email
+    detected_email = get_git_author_email(project_path)
+    author_email = confirm_and_save_author(project, detected_email, all_projects, force_reconfigure)
+    
+    if not author_email:
+        return {
+            'name': project_name,
+            'error': "No author email configured",
+            'total_hours': 0
+        }
+    
+    # Get commits filtered by author
+    commits = get_commits_for_day(project_path, since, author_email)
     
     if not commits:
         return {
             'name': project_name,
             'commits': 0,
             'total_hours': 0,
-            'summary': 'No commits today',
+            'summary': f'No commits by {author_email} on this day',
             'major_tasks': []
         }
     
@@ -410,7 +506,7 @@ def print_project_summary(project_result: Dict):
     
     print(f"\n{name}:")
     print(f"  📊 Commits: {commits}")
-    print(f"  ⏱️  Time: {hours:.2f} hours")
+    print(f"  ⏱️  Time: {hours:.1f} hours")
     
     if summary:
         print(f"  📝 Summary: {summary}")
@@ -487,6 +583,11 @@ def parse_arguments():
         action='store_true',
         help='Disable TimeCamp integration for this run'
     )
+    parser.add_argument(
+        '--reconfigure-author',
+        action='store_true',
+        help='Force reconfiguration of author email for all projects'
+    )
     return parser.parse_args()
 
 
@@ -551,7 +652,7 @@ async def main():
         # Analyze each project
         tasks = []
         for project in projects:
-            task = analyze_project(project, target_date)
+            task = analyze_project(project, target_date, projects, args.reconfigure_author)
             tasks.append(task)
         
         # Wait for all analyses to complete
@@ -571,7 +672,7 @@ async def main():
                     submit_to_timecamp(timecamp_client, projects[i], result, date_str)
         
         print("\n" + "=" * 50)
-        print(f"Total time across all projects: {total_hours_all:.2f} hours")
+        print(f"Total time across all projects: {total_hours_all:.1f} hours")
         
     except FileNotFoundError as e:
         print(f"Error: {e}")
