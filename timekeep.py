@@ -127,7 +127,7 @@ class TimeCampClient:
                 'status_code': e.response.status_code if e.response is not None else None
             }
     
-    def get_tasks(self) -> Optional[Dict[str, any]]:
+    def get_tasks(self) -> Optional[Dict[str, Any]]:
         """Get all tasks from TimeCamp to find task IDs"""
         url = f'{self.base_url}/tasks'
         
