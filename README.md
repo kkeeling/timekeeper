@@ -13,7 +13,7 @@ A single-file time tracking tool that analyzes git commits across multiple proje
 - De-duplicates commits across branches
 - Generates daily summaries with time estimates and major task breakdowns
 - **Time rounding** - rounds all time estimates to the nearest half hour
-- **Daily cap** - limits time tracking to a maximum of 10 hours per project per day
+- **Daily cap** - limits time tracking to a maximum of 6 hours per project per day
 - **Author filtering** - tracks only your commits by automatically detecting and storing your git email per project
 - **TimeCamp integration** (optional) - automatically creates time entries from analyzed commits
 

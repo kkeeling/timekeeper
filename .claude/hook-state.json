@@ -1,0 +1,12 @@
+{
+  "version": "1.0",
+  "sessions": {
+    "ed08896d-ecf4-49b8-a556-71d86f0dda5b": {
+      "last_processed_line": 58,
+      "last_processed_timestamp": "2025-07-10T07:35:03.760419",
+      "transcript_path": "/Users/codeshack-x/.claude/projects/-Users-codeshack-x-Documents--projects-timekeeper/ed08896d-ecf4-49b8-a556-71d86f0dda5b.jsonl",
+      "file_size": 141133,
+      "file_mtime": 1752147303.0715477
+    }
+  }
+}
