@@ -34,7 +34,7 @@ import requests
 # Constants for fallback estimation
 FALLBACK_BASE_HOURS = 0.5  # Minimum hours for any commits
 FALLBACK_LINES_PER_HOUR = 100  # Estimated lines of code per hour
-FALLBACK_MAX_HOURS = 40.0  # Maximum daily hours cap (before division by 4)
+FALLBACK_MAX_HOURS = 40.0  # Maximum daily hours cap
 
 # Pydantic models for structured output
 class TaskSummary(BaseModel):
@@ -377,10 +377,10 @@ Consider:
         analysis_result = CommitAnalysis.model_validate_json(response.text)
         result_dict = analysis_result.model_dump()
         
-        # Divide all time estimates by 4, round to nearest half hour, and cap total_hours at 6
-        result_dict['total_hours'] = min(round_to_half_hour(result_dict['total_hours'] / 4), 6)
+        # Round to nearest half hour and cap total_hours at 4
+        result_dict['total_hours'] = min(round_to_half_hour(result_dict['total_hours']), 4)
         for task in result_dict.get('major_tasks', []):
-            task['hours'] = round_to_half_hour(task['hours'] / 4)
+            task['hours'] = round_to_half_hour(task['hours'])
         
         return result_dict
         
@@ -388,7 +388,7 @@ Consider:
         # Handle JSON parsing errors
         print(f"JSON parsing error from Gemini API: {e}")
         total_lines = sum(c['additions'] + c['deletions'] for c in commits)
-        hours = min(round_to_half_hour((FALLBACK_BASE_HOURS + total_lines / FALLBACK_LINES_PER_HOUR) / 4), 6)
+        hours = min(round_to_half_hour(FALLBACK_BASE_HOURS + total_lines / FALLBACK_LINES_PER_HOUR), 4)
         
         return {
             'total_hours': hours,
@@ -400,7 +400,7 @@ Consider:
         # Handle Pydantic validation errors
         print(f"Response validation error from Gemini API: {e}")
         total_lines = sum(c['additions'] + c['deletions'] for c in commits)
-        hours = min(round_to_half_hour((FALLBACK_BASE_HOURS + total_lines / FALLBACK_LINES_PER_HOUR) / 4), 6)
+        hours = min(round_to_half_hour(FALLBACK_BASE_HOURS + total_lines / FALLBACK_LINES_PER_HOUR), 4)
         
         return {
             'total_hours': hours,
@@ -412,7 +412,7 @@ Consider:
         # Handle specific Google API errors
         print(f"Gemini API Error: {type(e).__name__}: {e}")
         total_lines = sum(c['additions'] + c['deletions'] for c in commits)
-        hours = min(round_to_half_hour((FALLBACK_BASE_HOURS + total_lines / FALLBACK_LINES_PER_HOUR) / 4), 6)
+        hours = min(round_to_half_hour(FALLBACK_BASE_HOURS + total_lines / FALLBACK_LINES_PER_HOUR), 4)
         
         return {
             'total_hours': hours,
@@ -424,7 +424,7 @@ Consider:
         # Catch any other unexpected exceptions
         print(f"An unexpected error occurred: {type(e).__name__}: {e}")
         total_lines = sum(c['additions'] + c['deletions'] for c in commits)
-        hours = min(round_to_half_hour((FALLBACK_BASE_HOURS + total_lines / FALLBACK_LINES_PER_HOUR) / 4), 6)
+        hours = min(round_to_half_hour(FALLBACK_BASE_HOURS + total_lines / FALLBACK_LINES_PER_HOUR), 4)
         
         return {
             'total_hours': hours,
