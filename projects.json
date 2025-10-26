@@ -7,20 +7,6 @@
     "author_email": "keenan.keeling@releafapp.com"
   },
   {
-    "name": "Pythia v3",
-    "path": "~/Documents/_projects/pythia-v3",
-    "timecamp_task_id": 176208691,
-    "timecamp_enabled": true,
-    "author_email": "kkeeling@gmail.com"
-  },
-  {
-    "name": "Pythia",
-    "path": "~/Documents/_projects/pythia",
-    "timecamp_task_id": 176208691,
-    "timecamp_enabled": true,
-    "author_email": "kkeeling@gmail.com"
-  },
-  {
     "name": "Bigeq",
     "path": "~/Documents/_projects/bigeq",
     "timecamp_task_id": 174721347,
@@ -30,6 +16,13 @@
   {
     "name": "Bestball Draft Analyzer",
     "path": "~/Documents/_projects/bestball-draft-analyzer",
+    "timecamp_task_id": 174721345,
+    "timecamp_enabled": true,
+    "author_email": "kkeeling@gmail.com"
+  },
+  {
+    "name": "ETR Start/Sit",
+    "path": "~/Documents/_projects/etr-start-sit",
     "timecamp_task_id": 174721345,
     "timecamp_enabled": true,
     "author_email": "kkeeling@gmail.com"
